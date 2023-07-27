@@ -1,0 +1,207 @@
+@startuml Универсальный вариант
+
+' Пример структуры документа из коллекции accounts
+' {
+'     userId: "xxxx-xxxx-xxxx-xxxx",
+'     platformType: "google",
+'     platformUserId: "xxxx",
+'     linkedPlatforms: [
+'         {
+'             platformType: "facebook",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformType: "microsoft",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformType: "apple",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformType: "device",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformType: "vkontakte",
+'             platformUserId: "xxxx",
+'         },
+'     ],
+'     sessionToken: "xxx-xxx-xxx-xxx-xxx-xxx",
+' }
+|User|
+start
+    note left
+        В рамках данного варианта
+        платформы не делятся на
+        внутренние и внешние.
+        Теперь возможность сохранения
+        прогресса определяет не тип
+        платформы, а исключительно
+        бизнесс-логика.
+    end note
+:Запрос авторизации платформы;
+|Game|
+:Авторизации платформы;
+:Отправка AuthPayload
+для получения токена
+сессии;
+|Backend|
+    :Валидация AuthPayload;
+    if (Валидация успешная?) then (+)
+        :Поиск аккаунта
+        по platformUserId;
+            if (Найден?) then (-)
+                :Поиск аккаунта
+                по platformUserId
+                в linkedPlatforms;
+                    if (Найден?) then (+)
+                        :Получение userId;
+                    else (-)
+                        :Создание аккаунта;
+                    endif
+            else (+)
+            endif
+
+        :Создание новой сессии
+        в аккаунте;
+        :Статус 200 с аккаунтом;
+    else (-)
+        :Статус 422;
+    endif
+:Отправка ответа;
+|Game|
+if (Запрос успешный?) then (+)
+    :Сохранение токена сессии;
+else (-)
+    :Досведание;
+    end
+endif
+:Старт игровой логики;
+stop
+
+|User|
+start
+:Запрос привязки
+к аккаунту ещё
+одной платформы;
+|Game|
+:Авторизация платформы;
+:Отправка AuthPayload
+для привязки платформы
+(например, на роут /link-platform);
+|Backend|
+:Валидация AuthPayload;
+if (Валидация успешная?) then (+)
+    :Поиск аккаунта
+    по sessionToken;
+    if (Найден?) then (+)
+        :Определение того, является ли
+        platformType уникальным среди
+        linkedPlatforms;
+        if (Является?) then (+)
+            :Поиск другого аккаунта
+            по platformUserId;
+            if (Найден?) then (-)
+                :Поиск другого аккаунта
+                по platformUserId
+                в linkedPlatforms;
+                if (Найден?) then (-)
+                    :Добавление в linkedPlatforms;
+                    :Статус 200 с аккаунтом;
+                else (+)
+                    :Исключение: platformUserId
+                    привязан к другому аккаунту;
+                    :Статус 422;
+                endif
+            else (+)
+                :Исключение: platformUserId
+                занят другим аккаунтом;
+                :Статус 422;
+            endif
+        else (-)
+            :Статус 422;
+        endif
+    else (-)
+        :Статус 422;
+    endif
+else (-)
+    :Статус 422;
+endif
+:Отправка ответа;
+|Game|
+stop
+
+|User|
+start
+:Запрос сохранения
+прогресса;
+|Game|
+    :Определение возможности
+    сохранения прогресса;
+        note left
+            Например, сейчас текущий
+            platformType = 'device'.
+            По условиям бизнесс-логики
+            мы можем сохранять прогресс
+            только в: ["facebook", "google",
+            "microsoft", "apple"].
+            Тогда мы просим юзера привязать
+            к аккаунту одну из этих платформ
+            для сохранения прогресса.
+        end note
+    if (Возможно?) then (+)
+    else (-)
+        :Привязка одной из доступных
+        платформ;
+    endif
+:Сохранение прогресса;
+stop
+
+|User|
+start
+:Запрос отвязки 
+платформы от аккаунта;
+|Game|
+:Определение того, является
+ли платформа, которую хочет
+отвязать юзер, единственно
+доступной для сохранения
+прогресса;
+    if (Единственно доступная?) then (+)
+        :Предупреждаем юзера о том
+        что он может потерять прогресс;
+        :Запрос подтверждения;
+            |User|
+            if (Запрос согласия?) then (+)
+                |Game|
+                :Продолжаем;
+            else (-)
+                end
+            endif
+            |Game|
+    else (-)
+    endif
+:Разлогин платформы;
+:Отправка запроса
+(например, на роут /unlink-platform/:platform);
+|Backend|
+    :Поиск аккаунта
+    по sessionToken;
+    if (Найден?) then (+)
+        :Поиск platformType
+        в linkedPlatforms;
+        if (Найден?) then (+)
+            :Удаление из linkedPlatforms;
+            :Статус 200 с аккаунтом;
+        else (-)
+            :Статус 422;
+        endif
+    else (-)
+        :Статус 422;
+    endif
+    :Отправка ответа;
+    |Game|
+stop
+
+@enduml

@@ -1,0 +1,63 @@
+@startuml cross-stitch native
+
+|User|
+
+start
+    note left
+        Пример частной реализации авторизации нативной
+        платформы cross-stitch. По типу авторизации можно
+        отнести ее к multiexternal авторизации.
+    end note
+:Запуск игры;
+
+|Client|
+
+:Инициализация
+(подготовка данных авторизации);
+
+
+:Запрос авторизации
+(отправка данных авторизации);
+
+|Backend|
+
+if (userId определен?) then (да)
+else (нет)
+    :Поиск userId по deviceUuid;
+endif
+
+if (userId определен?) then (да)
+  :Поиск externalProgress
+  (google, facebook);
+
+    if (Прогрессов несколько?) then (да)
+        :Возврат объединенных прогрессов;
+    
+    elseif (Прогресс один?) then (да)
+        :Возврат прогресса;
+    else
+    endif
+
+    if (externalProgress найден?) then (да)
+        if (externalProgress.userId !== userId) then (да)
+            :Объединение прогрессов
+            (за основу берется externalProgress);
+        else (нет)
+        endif
+    else (нет)
+    endif
+
+else (нет)
+  :Создание нового прогресса;
+endif
+
+:Отправка userId прогресса;
+
+|Client|
+
+:Сохранение userId в localStorage;
+:Старт игры;
+
+stop
+
+@enduml

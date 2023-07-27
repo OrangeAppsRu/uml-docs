@@ -1,0 +1,162 @@
+@startuml Внешняя c привязками других внешних платформ
+
+' Пример структуры документа из коллекции accounts
+' {
+'     userId: "xxxx-xxxx-xxxx-xxxx",
+'     platformName: "google",
+'     platformUserId: "xxxx",
+'     linkedPlatforms: [
+'         {
+'             platformName: "facebook",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformName: "microsoft",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformName: "apple",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformName: "device",
+'             platformUserId: "xxxx",
+'         },
+'         {
+'             platformName: "vkontakte",
+'             platformUserId: "xxxx",
+'         },
+'     ],
+' }
+|User|
+start
+:Запрос авторизации 
+внешней платформы;
+|Game|
+:Авторизации внешней платформы;
+:Отправка AuthPayload
+для получения токена
+сессии;
+|Backend|
+    :Валидация AuthPayload;
+    if (Валидация успешная?) then (+)
+        :Поиск аккаунта
+        по platformUserId;
+            if (Найден?) then (-)
+                :Поиск аккаунта
+                по platformUserId
+                в linkedPlatforms;
+                    if (Найден?) then (+)
+                        :Получение userId;
+                    else (-)
+                        :Создание аккаунта;
+                    endif
+            else (+)
+                :Получение userId;
+            endif
+
+        :Создание новой сессии;
+        :Статус 200 токеном сессии;
+    else (-)
+        :Статус 422;
+    endif
+:Отправка ответа;
+|Game|
+if (Запрос успешный?) then (+)
+    :Сохранение токена сессии;
+else (-)
+    :Досведание;
+    end
+endif
+:Старт игровой логики;
+stop
+
+|User|
+start
+:Запрос привязки ещё
+одной внешней платформы;
+|Game|
+:Авторизация внешней платформы;
+:Отправка AuthPayload
+для привязки платформы
+(например, на роут
+/link-platform/:userId);
+|Backend|
+    if (User авторизован?) then (+)
+        :Валидация AuthPayload;
+        if (Валидация успешная?) then (+)
+            :Поиск аккаунта
+            по userId;
+            if (Найден?) then (+)
+                :Определение того, является ли
+                platformName уникальным среди
+                linkedPlatforms;
+                if (Является?) then (+)
+                    :Поиск другого аккаунта
+                    по platformUserId;
+                    if (Найден?) then (-)
+                        :Поиск другого аккаунта
+                        по platformUserId
+                        в linkedPlatforms;
+                        if (Найден?) then (-)
+                            :Добавление в linkedPlatforms;
+                            :Статус 200;
+                        else (+)
+                            :Исключение: platformUserId
+                            привязан к другому аккаунту;
+                            :Статус 422;
+                        endif
+                    else (+)
+                        :Исключение: platformUserId
+                        занят другим аккаунтом;
+                        :Статус 422;
+                    endif
+                else (-)
+                    :Статус 422;
+                endif
+            else (-)
+                :Статус 422;
+            endif
+        else (-)
+            :Статус 422;
+        endif
+    else (-)
+        :Статус 401;
+    endif
+    :Отправка ответа;
+    |Game|
+stop
+
+|User|
+start
+:Запрос отвязки 
+внешней платформы;
+|Game|
+:Разлогин внешней платформы;
+:Отправка запроса
+(например, на роут
+/unlink-platform/:userId/:platform);
+|Backend|
+    if (User авторизован?) then (+)
+            :Поиск аккаунта
+            по userId;
+            if (Найден?) then (+)
+                :Поиск platformName
+                в linkedPlatforms;
+                if (Найден?) then (+)
+                    :Удаление из linkedPlatforms;
+                    :Статус 200;
+                else (-)
+                    :Статус 422;
+                endif
+            else (-)
+                :Статус 422;
+            endif
+    else (-)
+        :Статус 401;
+    endif
+    :Отправка ответа;
+    |Game|
+stop
+
+@enduml
