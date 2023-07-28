@@ -1,0 +1,438 @@
+@startuml migration
+
+package Common {
+
+interface IUserDataBackupService {
+    +createBackup(userId: string): Promise<void>;
+    +restoreBackup(userId: string): Promise<void>;
+    +getLastBackupDate(userId: string): Promise<Date | null>;
+}
+
+note right of IUserDataBackupService::getLastBackupDate
+    Можно просто возвращать lastLoginAt
+    из коллекции users
+end note
+
+interface IUserDataMigrationService {
+    +getDataForMigration(userId: string): Promise<UserDataForMigration>;
+    +createMigration(userId: string, options: CreateOptions): Promise<UserDataMigration>;
+    +getUncompletedMigration(userId: string): Promise<UserDataMigration | null>;
+    +getUnmigratedImagesIds(migrationId: string): Promise<string[]>;
+    +migrateUserData(migrationId: string): Promise<void>;
+    +migrateItems(migrationId: string): Promise<void>;
+    +migrateImages(migrationId: string, imagesIds: string[], isLast: boolean): Promise<void>;
+}
+
+IUserDataMigrationService ..> UserDataForMigration
+IUserDataMigrationService ..> UserDataMigration
+IUserDataMigrationService ..> CreateOptions
+
+annotation UserDataForMigration {
+    +current: SerializedUserData;
+    +other: SerializedUserData[];
+}
+
+UserDataForMigration ..> SerializedUserData
+
+annotation SerializedUserData {
+    +platformKey: string;
+    +platformUserId: string;
+    +coins: number;
+    +yarns: number;
+    +images: number;
+    +lastLoginAt: Date;
+    +name?: string;
+    +avatar?: string;
+}
+annotation UserDataMigration {
+    +_id?: string;
+    +userId: string;
+    +platformKey: string;
+    +platformUserId: string;
+    +numberMigratedImages: number;
+    +numberImagesToMigrate: number;
+    +migratedUserData: boolean;
+    +migratedItems: boolean;
+    +migratedImages: boolean;
+    +createdAt: Date;
+    +updatedAt: Date;
+}
+
+annotation CreateOptions  {
+    +platformKey: string;
+    +platformUserId: string;
+    +numberImagesToMigrate: number;
+}
+
+annotation UpdateOptions  {
+    +migratedUserData?: boolean;
+    +migratedItems?: boolean;
+    +migratedImages?: boolean;
+    +numberMigratedImages?: number;
+}
+
+annotation FindOptions  {
+    +platformKey?: string;
+    +platformUserId?: string;
+    +migratedUserData?: boolean;
+    +migratedItems?: boolean;
+    +migratedImages?: boolean;
+}
+
+interface IUserDataMigrationRepository {
+    +init(): Promise<void>;
+    +create(userId: string, options: CreateOptions): Promise<UserDataMigration>
+    +find(userId: string, options: FindOptions): Promise<UserDataMigration[]>
+    +updateOne(id: string, options: UpdateOptions): Promise<void>
+    +getUncompleted(userId: string): Promise<UserDataMigration[]>
+    +getLastMigration(userId: string): Promise<UserDataMigration | null>
+}
+
+IUserDataMigrationRepository ..> UserDataMigration
+IUserDataMigrationRepository ..> CreateOptions
+IUserDataMigrationRepository ..> FindOptions
+IUserDataMigrationRepository ..> UpdateOptions
+
+interface IProgressSynchronizationService {
+    +getDataForSync(userId: string): Promise<UserDataForMigration|null>;
+    +addSuggestedProgresses(userId: string, progresses: SuggestedProgress[]): Promise<void>;
+}
+
+note right of IProgressSynchronizationService::getDataForSync
+    Должен отдавать только те
+    данные для миграции, которые ранее
+    не были предложены
+end note
+
+IProgressSynchronizationService ..> ISuggestedProgressesStorage
+IProgressSynchronizationService ..> SuggestedProgress
+
+interface ISuggestedProgressesStorage {
+    +add(userId: string, progresses: SuggestedProgress[]): Promise<void>;
+    +getAll(userId: string): Promise<SuggestedProgress[]>;
+}
+
+ISuggestedProgressesStorage ..> SuggestedProgress
+
+interface SuggestedProgress {
+    +platformKey: string;
+    +lastLoginAt: Date;
+}
+
+}
+
+
+
+
+package Backend {
+
+
+interface IPlatformUserDataService {
+    +getPlatformKey(): string;
+    +getSerializedUserData(userId: string): Promise<SerializedUserData | null>;
+    +getUserData(userId: string): Promise<UserData | null>;
+    +getUserItems(userId: string): Promise<UserItem[]>;
+    +getUserImagesIds(userId: string, excludedIds?: string[]): Promise<string[]>;
+    +getUserImages(userId: string, targetIds?: string[]): Promise<UserImage[]>;
+    +getPayments(userId: string): Promise<AppPayment[]>;
+}
+
+note right: Отвечает за получение прогресса игрока из бд \n в том числе и из удаленных бд
+
+interface UserData {}
+interface UserItem {}
+interface UserImage {}
+
+IPlatformUserDataService ..> UserData
+IPlatformUserDataService ..> UserItem
+IPlatformUserDataService ..> UserImage
+IPlatformUserDataService ..> SerializedUserData
+IPlatformUserDataService ..> AppPayment
+
+annotation AppPayment {
+    id?: string;
+    transactionId: string;
+    currency: string;
+    amount: number;
+    productId: string;
+    createdAt: Date;
+    test?: boolean;
+    isConsumed?: boolean;
+    migrated?: AppPaymentMigratedInfo;
+    provider?: string,
+}
+
+AppPayment ..> AppPaymentMigratedInfo
+
+annotation AppPaymentMigratedInfo {
+    platformKey: string;
+    platformUserId: string;
+}
+
+class PlatformUserDataService {
+
+}
+
+note right: Получает прогресс из cocos'ной версии бд
+
+PlatformUserDataService --|> IPlatformUserDataService
+
+class LegacyPlatformUserDataService {
+    -_repository: ILegacyRepository;
+    -_platformKey: string;
+    -_util: LibraryMigrationUtil;
+    -_legacyDatabaseAdapter: LegacyDatabaseAdapter;
+}
+
+note right: Получает прогресс из legacy бд
+
+LegacyPlatformUserDataService --|> IPlatformUserDataService
+LegacyPlatformUserDataService ..> ILegacyRepository
+LegacyPlatformUserDataService ..> LibraryMigrationUtil
+LegacyPlatformUserDataService ..> LegacyDatabaseAdapter
+
+class LibraryMigrationUtil {}
+
+note right: Собственно там инкапсулированна \n механика миграции библиотеки которую \n ещё давным давно реализовал Миша
+
+class LegacyDatabaseAdapter {
+    +getLegacyUserId(platformType: string, externalUserId: string): string;
+    +getLegacyPlatform(platformType: string): string;
+    +getImageIdFromContentItemFname(fname: string): string;
+    +getLegacyPlatformFromLegacyId(legacyId: string): string;
+    +getPlatformIdFromLegacyId(legacyId: string): string;
+}
+
+
+interface ILegacyRepository {
+    +getUser(legacyUserId: string): Promise<LegacyUser | null>;
+    +getProgress(legacyUserId: string): Promise<LegacyImageProgress[]>;
+    +getDrawStates(ids: string[]): Promise<LegacyDrawStateItem[]>;
+    +getContentItems(ids: string[]): Promise<LegacyContentItem[]>;
+    +getSpecials(legacyUserId: string): Promise<SpecialsItem[]>;
+    +getContentInfoById(contentItemId: string): Promise<ContentItemInfo | null>;
+    +getPayments(options: GetLegacyPaymentsOptions): Promise<LegacyPayment[]>;
+}
+
+ILegacyRepository ..> GetLegacyPaymentsOptions
+ILegacyRepository ..> LegacyPayment
+
+
+class MockLegacyRepository {}
+MockLegacyRepository ..|> ILegacyRepository
+
+class LegacyRepository {
+    -_paymentsMongoAdapter: ILegacyPaymentsMongoAdapter;
+}
+LegacyRepository ..|> ILegacyRepository
+LegacyRepository ..> ILegacyPaymentsMongoAdapter
+
+
+
+
+
+
+class UserDataMigrationService {
+    #_currentPlatformDataService: IPlatformUserDataService;
+    #_migrationsRepository: IUserDataMigrationRepository;
+    #_getUserPlatformsStrategy: IGetUserPlatformsStrategy;
+    #_platformUserDataServicesResolver: IPlatformUserDataServicesResolver;
+    #_userRepository: UserRepository;
+    #_userItemRepository: UserItemRepository;
+    #_userImageRepository: UserImageRepository;
+    #_promoProgressRepository: PromoProgressRepository;
+    #_paymentsRepository: PaymentRepository;
+    #_backupService: IUserDataBackupService;
+}
+
+UserDataMigrationService --|> IUserDataMigrationService
+UserDataMigrationService ..> IPlatformUserDataServicesResolver
+UserDataMigrationService ..> IGetUserPlatformsStrategy
+UserDataMigrationService ..> IUserDataMigrationRepository
+UserDataMigrationService ..> IPlatformUserDataService
+UserDataMigrationService ..> IUserDataBackupService
+
+
+
+interface IPlatformUserDataServicesResolver {
+    init(): Promise<void>;
+    resolve(platformKey: string): IPlatformUserDataService | null;
+}
+
+IPlatformUserDataServicesResolver ..> IPlatformUserDataService
+
+class FactoryPlatformUserDataServicesResolver {
+    -_factory: IUserDataServiceFactory;
+    -_config: CreateUserDataServiceOptions[];
+}
+
+FactoryPlatformUserDataServicesResolver --|> IPlatformUserDataServicesResolver
+FactoryPlatformUserDataServicesResolver ..> IUserDataServiceFactory
+FactoryPlatformUserDataServicesResolver ..> CreateUserDataServiceOptions
+
+interface IUserDataServiceFactory {
+    +create(options: CreateUserDataServiceOptions): IPlatformUserDataService;
+}
+
+IUserDataServiceFactory ..> CreateUserDataServiceOptions
+
+annotation CreateUserDataServiceOptions {
+    +type: 'new' | 'legacy';
+    +platformKey: string;
+}
+
+
+class AppUserDataServiceFactory {
+    -_paymentsMongoAdapters: Record<PlatformType, ILegacyPaymentsMongoAdapter>;
+}
+
+AppUserDataServiceFactory --|> IUserDataServiceFactory
+AppUserDataServiceFactory ..> ILegacyPaymentsMongoAdapter
+
+
+
+interface ILegacyPaymentsMongoAdapter {
+    findPayments(collection: Collection, options: GetLegacyPaymentsOptions): Promise<LegacyPayment[]>
+}
+
+annotation GetLegacyPaymentsOptions {
+    platformKey: string;
+    platformUserId: string;
+    consumed?: boolean;
+    limit?: number;
+}
+
+ILegacyPaymentsMongoAdapter ..> GetLegacyPaymentsOptions
+
+
+
+
+class FbLegacyPaymentsMongoAdapter {}
+FbLegacyPaymentsMongoAdapter ..|> ILegacyPaymentsMongoAdapter
+
+class VkLegacyPaymentsMongoAdapter {}
+VkLegacyPaymentsMongoAdapter ..|> ILegacyPaymentsMongoAdapter
+
+class OkLegacyPaymentsMongoAdapter {}
+OkLegacyPaymentsMongoAdapter ..|> ILegacyPaymentsMongoAdapter
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+annotation UserPlatformInfo {
+    +userId: string;
+    +platformKey: string;
+    +platformUserId: string;
+}
+
+interface IGetUserPlatformsStrategy {
+    +getUserPlatforms(userId: string): Promise<UserPlatformInfo[]>
+}
+
+IGetUserPlatformsStrategy ..> UserPlatformInfo
+
+class DatabaseGetUserPlatformsStrategy {
+}
+
+DatabaseGetUserPlatformsStrategy --|> IGetUserPlatformsStrategy
+
+class ProxyGetUserPlatformsStrategy {
+    -_strategy: IGetUserPlatformsStrategy
+}
+
+ProxyGetUserPlatformsStrategy --* IGetUserPlatformsStrategy
+
+class WithLegacyPlatformsGetUserPlatformsStrategy {
+    -_repository: IUserDataMigrationRepository
+}
+
+note right
+  Подмешивает legacy платформы
+end note
+
+WithLegacyPlatformsGetUserPlatformsStrategy --|> ProxyGetUserPlatformsStrategy
+WithLegacyPlatformsGetUserPlatformsStrategy ..> IUserDataMigrationRepository
+
+
+class ProgressSynchronizationService {
+    -_storage: ISuggestedProgressesStorage;
+    -_migrationService: IUserDataMigrationService;
+}
+
+ProgressSynchronizationService --|> IProgressSynchronizationService
+ProgressSynchronizationService ..> IUserDataMigrationService
+ProgressSynchronizationService ..> ISuggestedProgressesStorage
+
+}
+
+
+
+package Frontend {
+    class SyncUserProgressManager {
+        -_migrationService: ClientUserDataMigrationService;
+        -_syncService: ClientProgressSynchronizationService;
+        -_selectStrategy: ISelectUserProgressStrategy;
+        -_notifyStrategy: INotifyProgressMigrationStrategy;
+        +sync(): Promise<void>;
+    }
+
+    SyncUserProgressManager ..> ClientUserDataMigrationService
+    SyncUserProgressManager ..> ClientProgressSynchronizationService
+    SyncUserProgressManager ..> ISelectUserProgressStrategy
+    SyncUserProgressManager ..> INotifyProgressMigrationStrategy
+
+    class ClientUserDataMigrationService {
+    }
+
+    ClientUserDataMigrationService --|> IUserDataMigrationService
+
+    class ClientProgressSynchronizationService {
+    }
+
+    ClientProgressSynchronizationService --|> IProgressSynchronizationService
+    
+    interface ISelectUserProgressStrategy {
+        +select(userData: UserDataForMigration): Promise<SerializedUserData>;
+    }
+
+    ISelectUserProgressStrategy ..> UserDataForMigration
+    ISelectUserProgressStrategy ..> SerializedUserData
+
+    class ActionSelectUserProgressStrategy {
+        -_actionManager: ActionManager;
+        -_actionKey: string;
+    }
+
+    ActionSelectUserProgressStrategy --|> ISelectUserProgressStrategy
+    ActionSelectUserProgressStrategy ..> ActionManager
+
+    interface INotifyProgressMigrationStrategy {
+        show(progress: MigrationProgress): Promise<void>;
+        hide(): Promise<void>;
+    }
+
+    INotifyProgressMigrationStrategy ..> MigrationProgress
+
+    class ActionNotifyProgressMigrationStrategy {
+        -_actionManager: ActionManager;
+        -_showActionKey: string;
+        -_hideActionKey: string;
+    }
+
+    ActionNotifyProgressMigrationStrategy --|> INotifyProgressMigrationStrategy
+    ActionNotifyProgressMigrationStrategy ..> ActionManager
+}
+
+@enduml
